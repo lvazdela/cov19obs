@@ -398,3 +398,10 @@ table(bdcoving$dimd)
 nas <- bdcoving%>%summarise_all(~sum(is.na(.)))
 nas <- t(nas)
 head(nas)
+
+#Se eliminarán los pacientes que tienen NA en motiegre
+library(tidyverse)
+names(bdcoving)
+bdcoving <- bdcoving %>% filter(!is.na(motivoegre))
+dim(bdcoving)
+save(bdcoving, file = 'Rdata/bdcoving.rda')
