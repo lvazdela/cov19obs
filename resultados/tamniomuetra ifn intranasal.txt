@@ -1,0 +1,54 @@
+PS log file C:\Users\dlv\Google Drive\PROYECTOS DE R\COVID19\tamniomuetra ifn intranasal.txt
+
+PS logging enabled 05/06/2020 10:52:15 a. m.
+Version 3.1.6
+
+Suggested citation:
+Dupont WD, Plummer WD: 'Power and Sample Size Calculations: A Review and Computer Program', Controlled Clinical Trials 1990; 11:116-28.
+    or 
+Dupont WD, Plummer WD: 'Power and Sample Size Calculations for Studies Involving Linear Regression', Controlled Clinical Trials 1998; 19:589-601.
+ 
+--------------------------------------------------------
+Type of study:  Dichotomous
+Requested output:  Sample size
+        How is the alternative hypothesis expressed? Two proportions
+        Matched or Independent? Independent
+        Case control? Prospective
+        Uncorrected chi-square or Fisher's exact test? Uncorrected chi-square test
+        alpha=0.05 power=0.8 P0=0.15 P1=0.05 M=1
+        Case sample size for uncorrected chi-squared test=140
+ 
+--------------------------------------------------------
+Type of study:  Survival
+Requested output:  Sample size
+Alternative hypothesis expressed as hazard ratio or relative risk
+        alpha=0.05 power=0.8 m1=511.8 R=3.2 A=120 F=30 M=1
+        Sample size= 207
+ 
+--------------------------------------------------------
+Type of study:  Survival
+Requested output:  Sample size
+Alternative hypothesis expressed as hazard ratio or relative risk
+        alpha=0.05 power=0.8 m1=511.8 R=3.2 A=90 F=30 M=1
+        Sample size= 246
+ 
+--------------------------------------------------------
+Type of study:  Survival
+Requested output:  Sample size
+Alternative hypothesis expressed as hazard ratio or relative risk
+        alpha=0.05 power=0.8 m1=511.8 R=3.2 A=60 F=30 M=1
+        Sample size= 306
+ 
+--------------------------------------------------------
+Type of study:  Survival
+Requested output:  Sample size
+Alternative hypothesis expressed as hazard ratio or relative risk
+        alpha=0.05 power=0.8 m1=383.8 R=3.16 A=60 F=30 M=1
+        Sample size= 234
+ 
+We are planning a study with 1 control per experimental subject, an accrual interval of 60 time units, and additional follow-up after the accrual interval of 30 time units.  In a previous study the median survival time on the control treatment was 383.8 time units.  If the true hazard ratio (relative risk) of control subjects relative to experimental subjects is 3.16, we will need to study 234 experimental subjects and 234 control subjects to be able to reject the null hypothesis that the experimental and control survival curves are equal with probability (power) .800.   The Type I error probability associated with this test of this null hypothesis is 0.05.
+ 
+ 
+We are planning a study with 1 control per experimental subject, an accrual interval of 60 time units, and additional follow-up after the accrual interval of 30 time units.  In a previous study the median survival time on the control treatment was 383.8 time units.  If the true hazard ratio (relative risk) of control subjects relative to experimental subjects is 3.16, we will need to study 234 experimental subjects and 234 control subjects to be able to reject the null hypothesis that the experimental and control survival curves are equal with probability (power) .800.   The Type I error probability associated with this test of this null hypothesis is 0.05.
+ 
+
