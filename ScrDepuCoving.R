@@ -405,3 +405,8 @@ names(bdcoving)
 bdcoving <- bdcoving %>% filter(!is.na(motivoegre))
 dim(bdcoving)
 save(bdcoving, file = 'Rdata/bdcoving.rda')
+
+
+
+
+
