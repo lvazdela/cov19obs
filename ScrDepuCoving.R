@@ -10,7 +10,8 @@
 
 #Transoporto la tabla de Excel
 library(tidyverse)
-library(lubridate)
+library(lubridate) #para manejo de fechas
+library(caret) #para nearZerovalue
 
 bdcoving <- read.csv('coviding.csv')
 bdcoving <- bdcoving%>%slice(1:161)
@@ -201,6 +202,7 @@ which(!str_detect(bd$ph, '\\d\\.\\d'))
 
 #abro bdcoving.csv, que viene de la hoja FICHA DE INGRESO, del libro "Base de datos 18_R.xlsx", pero 
 #pongo que detecte como NAs a las cadenas vacías, que las variables se queden como son (no convertir a factores)
+
 bdcoving <- read.csv('bases-originales/bdcoving.csv', na.strings = '', as.is = TRUE)
 dim(bdcoving) #checa con la base original
 
@@ -356,8 +358,8 @@ indcambios$colesterol.
 bdcoving$colesterol[indcambios$colesterol.] <- '1'
 bdcoving$colesterol[indcambios$colesterol.]
 
-bdcoving$tp[indcambios$tp] #escribió "INDOSIFICABLE", pongo un 99
-bdcoving$tp[indcambios$tp] <- '99'
+bdcoving$tp[indcambios$tp] #escribió "INDOSIFICABLE", pongo un 30
+bdcoving$tp[indcambios$tp] <- '30'
 bdcoving$tp[indcambios$tp]
 
 nomcadenas
@@ -387,26 +389,56 @@ bdcoving$dimd[indcambios$dimd] <- NA
 bdcoving$dimd[indcambios$dimd]
 nomcadenas
 
-hartona <- function(x){
-  
- sum(is.na(x))/length(x) > 0.6
-}
-nomhartona <- bdcoving%>%select_if(hartona)%>%names
-nomhartona
-sum(is.na(bdcoving$dimd))
-table(bdcoving$dimd)
-nas <- bdcoving%>%summarise_all(~sum(is.na(.)))
-nas <- t(nas)
-head(nas)
 
-#Se eliminarán los pacientes que tienen NA en motiegre
-library(tidyverse)
-names(bdcoving)
-bdcoving <- bdcoving %>% filter(!is.na(motivoegre))
-dim(bdcoving)
+nomchar <- bdcoving%>%select_if(is.character)%>%names
+nomchar
+#pongo en nomchar las variables de caracter que deben ser convertidas a numeric
+nomchar <- nomchar[c(-6:-1,-14:-9,-29:-25, -34:-32)]
+nomchar
+bdcoving2 <- bdcoving%>%mutate(across(all_of(nomchar), as.numeric))
+str(bdcoving2[,nomchar])
+bdcoving <- bdcoving2
+typeof(bdcoving$basof)
+
+#veo los integer
+nomint <- bdcoving%>%select_if(is.integer)%>%names
+nomint
+# convierto a factores los que empiezan con tx, app y ekg
+bdcoving2 <- bdcoving%>%mutate(across(starts_with(c('tx', 'app', 'ekg')), as.factor))
+bdcoving <- bdcoving2
+
+#convierto a numéricos los que son integer pero no factores (variables categóricas)
+nomint2 <- bdcoving%>%select(where(is.integer))%>%names
+nomint2
+nomnum <- nomint2[c(1,4,10,11,13,16,18:28,30:32,36)]
+nomnum
+bdcoving2 <- bdcoving%>%mutate(across(all_of(nomnum), as.numeric))
+str(bdcoving2[,nomnum])
+bdcoving <- bdcoving2 
+
+#convierto en factores, los enteros que quedan
+nomint3 <- bdcoving%>%select(where(is.integer))%>%names
+nomint3
+#quito ltso2
+nomint3 <- nomint3[-10]
+
+
+bdcoving2 <- bdcoving%>%mutate(across(all_of(nomint3), as.factor))
+str(bdcoving2[,nomint3])
+bdcoving <- bdcoving2
+
+nomchar2 <- bdcoving%>%select(where(is.character))%>%names
+nomchar2
+
+#convierto en factores los tipo cadena que corresponden.
+nomchar2 <- nomchar2[-4:-1]
+nomchar2
+
+bdcoving2 <- bdcoving%>%mutate(across(all_of(nomchar2), as.factor))
+str(bdcoving2[,nomchar2])
+bdcoving <- bdcoving2
+
+sink('resultados/strubdcoving2.txt')
+str(bdcoving, list.len = 200)
+sink()
 save(bdcoving, file = 'Rdata/bdcoving.rda')
-
-
-
-
-
