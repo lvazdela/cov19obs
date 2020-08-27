@@ -2,6 +2,7 @@
 .Rhistory
 .RData
 .Ruserdata
-bibliografia/*
-bases-originales/*
-
+bibliografia/
+bases-originales/
+[pP]rueba*.*
+resultados/[pP]rueba*.*
