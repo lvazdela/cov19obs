@@ -1,3 +1,7 @@
+
+# DEPURACIÓN Base de datos 18.xlsx ----------------------------------------
+
+
 #Depuración de la base de evolución en internamiento de los pacientes.
 #21 de julio de 2020.
 
@@ -309,3 +313,93 @@ str(bdcovdi)
 bdcovdi$txhashosp <- as.factor(bdcovdi$txhashosp)
 str(bdcovdi)
 save(bdcovdi, file = 'Rdata/bdcovdi.rda')
+
+# DEPURACIÓN HOJA DIARIA DE ARCHIVO Base de datos 29.xlsx -----------------
+
+#_____________________________________________________________________________
+#2/08/2020
+#Copio y pego la HOJA diaria, con la opción pegado especial...formato de valores y número (respeta fecha)
+#la guardo como covdiario.csv sin los nombres,
+# Este código lo uso una sola vez, para guardar los nombres de variables cortos.
+# load('Rdata/bdcovdiario.rda')
+# nomcovdiario <- names(bdcovdiario)
+# nomcovdiario[which(nomcovdiario == 'colesterol.')] <- 'colesterol'
+# save(nomcovdiario, file = 'Rdata/nomvarcovdiario29.rda')
+#_____________________________________________________________________________
+
+library(tidyverse)
+library(lubridate)
+
+bdcovdiario <- read.csv('bases-originales/covdiario.csv', na.strings = c('', 'NA'), header = FALSE)
+str(bdcovdiario)
+
+#cambio los nombres
+load('Rdata/nomvarcovdiario29.rda')
+bdcovdiario <- bdcovdiario %>% rename_with(~nomcovdiario, everything())
+
+#cambio las fechas
+bdcovdiario <- bdcovdiario %>%mutate(across(starts_with('fecha'), dmy))
+
+which(bdcovdiario$fecha > as.Date('29/07/2020', '%d/%m/%Y'))
+bdcovdiario %>% select(starts_with('fecha')) %>% str
+dim(bdcovdiario)
+#reviso las variables numéricas que salieron como de caracter:
+str(bdcovdiario)
+#rasuro cadenas:
+bdcovdiario <- bdcovdiario %>% mutate(across(where(is.character), str_trim, side = 'both' ))
+nomcadenas <- bdcovdiario%>%select_if(is.character)%>%names
+
+
+nomcadenas
+#nomcadnum <- nomcadenas[c(6,7,14,15)]#no funcionó para la actualización del 4 de agosto
+nomcadnum <- nomcadenas[c(6:9, 16,17)]
+nomcadnum
+
+#hago la regexp
+patron <- '([^\\d\\.])|(\\.{2,})' #cualquier cosa menos dígitos o puntos, o mas de 1 punto
+
+#hago la función para apply
+fpatron <- function(x){
+  x[str_which(x, pattern = patron)]
+}
+
+errores <- apply(bdcovdiario[, nomcadnum],2,fpatron )
+errores
+
+#Con los errores que detecté, hago un case_when
+farreglar <- function(x){
+  x = case_when(
+    str_detect(x, ',|\\.{2,}') ~ str_replace(x,',|\\.{2,}', '.'),
+    str_detect(x, 'O') ~ str_replace(x, 'O','0'),
+    str_detect(x, 'NA') ~ NA_character_,
+    str_detect(x, ' ') ~ str_replace(x, ' ', ''),
+    TRUE ~ x
+  )
+}
+
+bdcovdiario <- bdcovdiario %>% mutate(across(all_of(nomcadnum), farreglar)) 
+errores <- apply(bdcovdiario[, nomcadnum],2,fpatron )
+errores
+#Arreglado
+
+#Convierto a variables numéricas:
+bdcovdiario <- bdcovdiario %>% mutate(across(all_of(nomcadnum), as.numeric))
+
+#Convierto a factores
+nomvar <- names(bdcovdiario)
+nomvar
+factores <- nomvar[c(6:8, 13, 16, 58, 63:74)]
+factores
+bdcovdiario <- bdcovdiario %>% mutate(across(all_of(factores), as.factor))
+str(bdcovdiario)
+
+#rasuro nss, para que no haya problemas cuando compare con bdcoving
+bdcovdiario <- bdcovdiario %>% mutate( nss = str_trim(nss))
+
+#Guardo estructura:
+sink('resultados/strubdcovdiario.txt')
+str(bdcovdiario)
+sink()
+#guardo bdcovdiario
+save(bdcovdiario, file = 'Rdata/bdcovdiario.rda')
+

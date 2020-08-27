@@ -202,7 +202,8 @@ which(!str_detect(bd$ph, '\\d\\.\\d'))
 
 #abro bdcoving.csv, que viene de la hoja FICHA DE INGRESO, del libro "Base de datos 18_R.xlsx", pero 
 #pongo que detecte como NAs a las cadenas vacías, que las variables se queden como son (no convertir a factores)
-
+library(tidyverse)
+library(lubridate)
 bdcoving <- read.csv('bases-originales/bdcoving.csv', na.strings = '', as.is = TRUE)
 dim(bdcoving) #checa con la base original
 
@@ -253,7 +254,7 @@ nomcadenas
 patron <- '[^\\d\\.]' #cualquier cosa menos dígitos o puntos
 str_view_all(c(12, 12.5, '12,5', ' 12.5', '12a'), patron)
 str_which(bdcoving$peso, pattern = patron)
-which(indcambios)
+
 bdcoving$peso[152]
 #Esto funciona, ve si lo puedo automatizar
 
@@ -438,7 +439,249 @@ bdcoving2 <- bdcoving%>%mutate(across(all_of(nomchar2), as.factor))
 str(bdcoving2[,nomchar2])
 bdcoving <- bdcoving2
 
+
+#Los primeros 15 de estas variables, están como NAs lo que debería ser dos, lo cambio
+funcion <- function(x){
+  ifelse(is.na(x),2,x)
+}
+bdcoving[1:15,] <- bdcoving[1:15,]%>%mutate(across(starts_with(c('txprev', 'txhosp')), funcion))
+
+#has debe estar como app, la renombro a app_0
+bdcoving <- bdcoving%>%rename(app_0 = has)
+#recodifico las variables de app, txprevio y txhosp
+bdcoving <- bdcoving %>% mutate(across(starts_with(c( 'app','txprev', 'txhosp')), ~recode_factor(.,'2' = 0,'1' = 1, .default = 0)))
+# recode hay que poner la tilde, .default es como else.
+
+#guardo la estructura de bdcoving
 sink('resultados/strubdcoving2.txt')
 str(bdcoving, list.len = 200)
 sink()
+#guardo bdcoving
 save(bdcoving, file = 'Rdata/bdcoving.rda')
+
+
+# TERCER MANEJO DE BASE DE DATOS "Base de datos 18.xlsx ---------------------------------------------
+
+#______________________________________________________________________
+# 29 de julio de 2020
+#Se tuvo una reunión con las capturadoras, son dos residentes de cardiología.
+#Ellas siguieron trabajando la base, por lo que se tuvo una reunión el 28 de julio para ponerse de acuerdo.
+#Se puso en la nube el archivo 'Base de datos 18.xlsx', nos pusimos de acuerdo con los códigos, por lo que 
+#ahora el manejo será diferente. Bajo la hoja de ingreso y la guardo como "coviding2.csv"
+#_______________________________________________________________________
+
+library(tidyverse)
+library(lubridate)
+
+vignette('readr')
+bdcoving <- read.csv('bases-originales/coviding3.csv',  as.is = TRUE) # les dije que a los blancos les pusieran NA
+dim(bdcoving) #checa con la base original
+
+#Trabajamos con las fechas:
+bdcoving <- bdcoving%>%mutate_at(vars(starts_with('fecha')), dmy)
+
+#salen errores cuando convierto a fecha, selecciono los NAs en fechas
+colfechas <- select(bdcoving, starts_with('fecha'))
+indmalasfechas <- apply(colfechas, 2, function(x){
+  which(is.na(x))
+})
+indmalasfechas
+#En esta ocasión, decido corregir directamente los errores en el Excel de la nube.
+indmalasfechas$fecha
+indmalasfechas$fechacov1
+indmalasfechas$fechacov1+3
+indmalasfechas$fechahosp
+indmalasfechas$fechahosp+3
+#fue un desastre. Se habló con las capturistas, refirieron problemas con el formato de fecha.
+#Efectivamente, el Excel en línea pone las fechas en formato gringo. Se dan instrucciones y se espera
+#a resultados.
+
+
+#______________________________________________________________________
+# 29 de julio de 2020
+#Se tuvo una reunión con las capturadoras, son dos residentes de cardiología.
+#Ellas siguieron trabajando la base, por lo que se tuvo una reunión el 28 de julio para ponerse de acuerdo.
+#Se puso en la nube el archivo 'Base de datos 18.xlsx', nos pusimos de acuerdo con los códigos, por lo que 
+#ahora el manejo será diferente. Bajo la hoja de ingreso y la guardo como "coviding2.csv"
+#_______________________________________________________________________
+
+library(tidyverse)
+library(lubridate)
+
+vignette('readr')
+bdcoving <- read.csv('bases-originales/coviding3.csv',  as.is = TRUE) # les dije que a los blancos les pusieran NA
+dim(bdcoving) #checa con la base original
+
+# MANEJO DE BASE DE DATOS "Base de datos 29.xlsx" -------------------------
+
+#______________________________________________________________________
+# 31 de julio de 2020
+# Por alguna razón, las fechas se modifican cuando copian los datos de su base a la de la nube
+#Reviso y la estrategia se convierte en que suban la base actualizada, borrando la anterior,
+#manteniendo el mismo nombre: "Base de datos 29.xlsx"
+#Yo la guardo como "Base de datos 29_local.xlsx"
+#Se guarda el .csv sin nombres de variables en Excel, por lo que creo una cadena con los nombres
+#En excel, copio el rango en la hoja y creo una con la opción pegado especial...formato de valores y números
+#El código siguiente lo uso una sola vez, por lo que lo inactivo, porque se añadieron variables.
+# load('Rdata/bdcoving.rda')
+# nomvar <- names(bdcoving)
+# nomvar
+# nomvar <- c(nomvar[1:154],'imc', 'diasest', 'diasenf', 'score', 'sexo')
+# nomvar
+# save(nomvar, file = 'Rdata/nomvarbdcoving29.rda')
+#_______________________________________________________________________
+
+library(tidyverse)
+library(lubridate)
+
+bdcoving <- read.csv('bases-originales/coviding29.csv', header = FALSE)
+#bdcoving <- read_csv('bases-originales/bdcoving29.csv', col_names = FALSE)
+
+#pongo nombres:
+load('Rdata/nomvarbdcoving29.rda')
+bdcoving <- bdcoving%>%rename_with(~nomvar, everything())
+bdcoving %>% select(starts_with('fecha'))%>%str
+
+#Trabajo las fechas, dejo este código como referencia cuando la fecha es un número
+#bdcoving %>% select(where(is.numeric)) %>% mutate(across(starts_with('fecha'), ~as_date(., origin = '1899-12-30')))
+#bdcoving$fechalta[which(str_detect(bdcoving$fechalta,'[^\\d]'))]
+
+bdcoving <- bdcoving %>% mutate(across(starts_with('fecha'), dmy))      
+bdcoving %>% select(starts_with('fecha'))%>%str
+#sin problemas.
+
+str(bdcoving, list.len = 200)
+#Convierto a factores, tx, app, ekg
+bdcoving <- bdcoving %>% mutate(across(starts_with(c('app', 'tx', 'ekg')), as.factor))
+
+#cambiamos variables gdo
+bdcoving %>% select(starts_with('gdo')) %>% str
+
+cambiagdo <- function(x){
+  if(is.character(x)){  #fue problemático, si uso ifelse, regresa integer
+    x <- as.factor(x)
+  }
+  return(x)
+}
+bdcoving <- bdcoving %>% mutate(across(starts_with('gdo'), cambiagdo))
+str(bdcoving, list.len = 200)
+#quito IL-6
+sum(!is.na(bdcoving$il6))
+bdcoving <- bdcoving %>% select(-il6)
+
+#a factores algunos enteros
+bdcoving %>% select(where(is.integer)) %>% str
+
+# escolaridad la dejamos ordinal, el 7 es desconoce, lo pasamos a NA
+bdcoving$escolaridad[which(bdcoving$escolaridad == 7)] <- NA
+table(bdcoving$escolaridad)
+#hacemos una cadena con las variables que son integer pero los queremos como factores
+integafac <- read_lines('bases-originales/integerafactores.txt') %>% str_split(',') %>% unlist
+bdcoving <- bdcoving %>% mutate(across(all_of(integafac), as.factor))
+
+#Checamos los character
+bdcoving %>% select(where(is.character)) %>% str
+
+#Arreglamos antihip
+table(bdcoving$antihip)
+
+prueba <- bdcoving$antihip
+prueba  <- case_when(
+  prueba == '1, 2'| prueba =='1,2'|prueba == '2,1' ~ '1,2',
+  prueba == '2,4'| prueba == '2, 4' ~ '2,4',
+  prueba == '2,7'|prueba =='2.7'| prueba == '7,2,' | prueba == '2, 7' ~ '2,7',
+  prueba == '2, 7, 1, 5' ~ '1,2,5,7',
+  prueba == '3, 1, 4' ~ '1,3,4',
+  prueba == '86' ~ '6,8',
+  prueba == '11' ~ '1',
+  TRUE ~ prueba
+)
+bdcoving$antihip <- prueba
+table(bdcoving$antihip)
+
+#Arreglamos txhashosp: solo está repetido, "2, 4", "2,4"
+table(bdcoving$txhashosp)
+bdcoving$txhashosp[which(bdcoving$txhashosp == '2, 4')] <- '2,4'
+bdcoving$txhashosp <- as.character(bdcoving$txhashosp)
+bdcoving$txhashosp <- as.factor(bdcoving$txhashosp)
+levels(bdcoving$txhashosp)
+
+#variables numéricas que salieron como cadenas.
+nomcadenas <- c('urea', 'creat', 'bun', 'plaq', 'tp')
+patron <- '([^\\d\\.])|(\\.{2,})' #cualquier cosa menos dígitos o puntos, o mas de 1 punto
+
+fpatron <- function(x){
+  x[str_which(x, pattern = patron)]
+}
+nomcadenas
+errores <- apply(bdcoving[, nomcadenas],2,fpatron )
+errores
+
+#hago una función que arregle los errores que noté con el código anterior:
+farreglar <- function(x){
+  x = case_when(
+    str_detect(x, ',|\\.{2,}') ~ str_replace(x,',|\\.{2,}', '.'),
+    str_detect(x, ' ') ~ str_replace(x, ' ',''),
+    TRUE ~ x
+  )
+}
+bdcoving <- bdcoving %>% mutate(across(all_of(nomcadenas), farreglar))
+errores <- apply(bdcoving[, nomcadenas],2,fpatron )
+errores # ya no hay errores.
+
+#convierto las variables en nomcadenas a numéricas:
+bdcoving <- bdcoving %>% mutate(across(all_of(nomcadenas), as.numeric))
+bdcoving %>% select(all_of(nomcadenas)) %>% str
+
+#veo las de character para factores
+bdcoving %>% select(where(is.character)) %>% str
+table(bdcoving$sexo)
+table(bdcoving$sintoma1)
+table(bdcoving$rescov2) #hay dos problemas: tiene una fecha en 153 de excel, y NA cuando cov2 = 1 en 315
+bdcoving <- bdcoving %>% mutate(across(all_of(c('antihip', 'rescov2', 'sintoma1','sexo')), as.factor))
+
+
+#Calculamos variables de dias y el imc
+bdcoving <- bdcoving %>% mutate(imc = peso/talla^2, diasest = as.numeric(fechalta - fechahosp),
+                                diasenf = as.numeric(fechalta - fechainisint),
+                                diasretraso = as.numeric(fechahosp - fechainisint))
+
+#rasuramos nss, para que no haya problemas cuando comparemos con bdcovdiario.
+bdcoving <- bdcoving %>% mutate(nss = str_trim(nss, side = 'both'))
+
+#Al trabajar los tratamientos previos, se descubren errores numéricos. Los arreglo desde aquí:
+names(bdcoving)
+# hay que cambiar los factores a numéricos para que funcione bien la comparación.
+facanum <- function(x){
+  as.numeric(as.character(x))
+}
+
+bd <- bdcoving %>% select(all_of(c(starts_with('app'), starts_with('txprev'), starts_with('txhosp'))))%>%
+  mutate(across(everything(), facanum))
+inderrapptx <- apply(bd, 2, function(x) x[which(x > 2 | x < 1)])
+inderrapptx
+#veo que los errores son números mayores a 2, por lo que los cambio a 2 en bloque.
+farrapptx <- function(x){
+   case_when(
+    x > 2 ~ 2,
+    TRUE ~ x
+  )
+}
+#Como ya están como factores, hay que convertirlos primero a numéricos.
+bdcoving <- bdcoving %>%
+  mutate (across(all_of(c(starts_with('app'), starts_with('txprev'), starts_with('txhosp'))),facanum)) %>%
+  mutate (across(all_of(c(starts_with('app'), starts_with('txprev'), starts_with('txhosp'))),farrapptx)) %>%
+  mutate (across(all_of(c(starts_with('app'), starts_with('txprev'), starts_with('txhosp'))),as.factor))
+
+rm(bd)
+
+# Al trabajar la talla, me di cuenta que hay un error, lo corrijo desde aquí:
+bdcoving$talla[which.max(bdcoving$talla)] <- 1.71
+
+#
+#guardo estructura y objeto
+sink('resultados/strubdcovingtot.txt')
+str(bdcoving, list.len = 200)
+sink()
+save(bdcoving, file = 'Rdata/bdcoving.rda')
+dim(bdcoving)
