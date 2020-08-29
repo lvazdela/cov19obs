@@ -1,78 +1,41 @@
+---
+title: "Análisis descriptivo en pacientes diagnosticados de COVID-19 en el Hospital de Especialidades IMSS Puebla"
+author: "Luis G. Vázquez de Lara Cisneros."
+date: "27/8/2020"
+output: html_document
+---
 
-# CREACIÓN DE BDCOVIN A PARTIR DE BDCOVING ---------------------------------------------
-
-
-load('Rdata/bdcoving.rda')
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
 library(tidyverse)
-library(caret)
+library(knitr)
+```
 
-
-#Genero una base con la cantidad de NAs y casos válidos.
-bdnasing <- bdcoving%>%summarise(across(everything(),  ~sum(is.na(.x)) )) #Ahora hay que usar across en summarise_all y los demás
-bdnasing <- as.data.frame(t(bdnasing))
-nomfilas <- row.names(bdnasing)
-bdnasing <- bdnasing %>% rename(totalnas = V1)%>%mutate(porcentaje = round(totalnas/dim(bdcoving)[1]*100,3),
-                                                  len = dim(bdcoving)[1], variable = nomfilas,
-                                                  validos = len - totalnas)%>%
-  select(variable, validos, totalnas, porcentaje, len)%>%arrange(desc(porcentaje))
-
-save(bdnasing, file = 'Rdata/bdnasing.rda')
-
-hartosna <- function(x){
- sum(is.na(x))/length(x) > 0.73 #valor decidido, checando bdnas
-}
-#Quito los Nas
-nomhartosna <- bdcoving %>% select(where(hartosna))%>%names
-nomhartosna
-bdcovin <- bdcoving%>%select(!where(hartosna))
-names(bdcovin)
-str(bdcovin, list.len = 200)
-
-varnocamb <- bdcovin%>% select(all_of(nearZeroVar(bdcovin)))%>%names
-varnocamb
-table(bdcovin$app_1, useNA = 'ifany')
-table(bdcovin$rescov1, useNA = 'ifany')
-bdcovin%>%as_tibble %>% filter (rescov1 %in% c(2,3,4))%>%select(motivoegre)%>%pull%>%table(.)
-
-bdcovin%>%as_tibble %>% filter (rescov1%in% c(1,NA))%>%select(motivoegre)%>%pull%>%table(.)
-bdcovin%>%as_tibble %>% filter (!is.na(rescov1))%>%select(motivoegre)%>%pull%>%table(.)
-table(prueba =bdcovin$rescov1, motivoalta = bdcovin$motivoegre, useNA = 'ifany')
-length(which(is.na(bdcovin$rescov1)))
-
-
-# ANTECEDENTES PERSONALES PATOLÓGICOS ----------------------------------------------------
-
-#__________________________________________________________________________________
-# Código para:
-# 1) una tabla con la frecuencia de antecedentes personales patológicos en la base
-# 2) una tabla con la frecuencia de app por motivo de egreso
-# 3) cálCulo de chis cuadradas de apps contra motivo de egreso
-# 4) añadir las chis a la tabla2
-# 5) código para cantidad de antecedentes por paciente
-#__________________________________________________________________________________
-
-
-library(tidyverse)
-#cargo bdcoving
+```{r muestra, message=FALSE, warning=FALSE}
 load('Rdata/bdcoving.rda')
+muestra <- dim(bdcoving)[1]
+fechaini <- min(bdcoving$fecha)
+fechafin <- max(bdcoving$fecha)
+covpos <- sum(bdcoving$rescov1 == 1)
+noegre <- sum(!(bdcoving$motivoegre %in% c(2,3)))
+totmuestra <- covpos - noegre
+```
+
+## Características de la muestra
+This study was conducted in the  _Unidad Médica de Alta Especialidad (UMAE) Hospital de Especialidades Gral. Div. Manuel Ávila Camacho_, Puebla, Puebla, Mexico.
+A total of  ``r muestra`` hospital records between ``r fechaini`` and ``r fechafin`` with diagnosis of covid-19 were analyzed, ``r covpos`` had a positive result on RT-PCR of a nasopharyngeal swab, and a total of ``r noegre`` patients were transferred to other facilities. The final sample comprised ``r totmuestra`` hospital records.
+
+## Comorbidities
+
+```{r frec-app, message=FALSE, warning=FALSE}
 app <- read_lines('bases-originales/nomapp.txt')
-app <- str_split(app, '\t')[[1]]%>%str_replace_all('\\s|-', "_") #cuando copio y pego la cadena de encabezados de Excel, sale \t que es un tabulador
-
-##creamos sobrepeso y obesidad (app_18, app_19)
+app <- str_split(app, '\t')[[1]]%>%str_replace_all('\\s|-', "_") 
 bdcoving <- bdcoving %>%
   mutate(app_18 = as.factor(ifelse(imc >= 25 & imc < 30, 1, 2)),
          app_19 = as.factor(ifelse(imc >= 30, 1, 2)))
-#añado has, porque en la base de excel está separada del conjunto de antecedentes personales patológicos (app),
 app <- c('HAS', app, 'SOBREPESO', 'OBESIDAD')
-app
 nomappord <- bdcoving%>%select(starts_with('app'))%>%names
-nomappord
 
-# solo emplearemos los pacientes con resultado de la prueba covid
-#bdcoving <- bdcoving %>% filter(rescov1 %in% c(1,2))
-
-
-#Frecuencia global de antecedentes
 frecapp <- bdcoving%>%
   filter(motivoegre %in% c(2,3), rescov1 == 1)%>% 
   pivot_longer(starts_with('app'), names_to = 'apps', values_to = 'valor')%>%
@@ -84,8 +47,49 @@ frecapp <- bdcoving%>%
   arrange(frec)%>%
   rename(Antecedentes = apps, Cantidad = n, Porcentaje = frec, Total = total)%>%
   select(Antecedentes, Cantidad, Porcentaje, Total)
+kable(frecapp)
+```
 
-#frecuencia de antecedentes acumulados por persona:
+## Association between comorbidities and outcome
+
+```{r frecapp-egreso}
+bdcat <- bdcoving%>%filter(motivoegre %in% c(2,3) & rescov1 == 1) %>% 
+  mutate(motivoegre = factor(motivoegre, levels = c(2,3), labels = c('Mejoría', 'Defunción')))%>%
+  select(c(motivoegre, starts_with('app')))
+listachis <- apply(bdcat[,-1],2, function(i){chisq.test(table(i, bdcat$motivoegre))$p.value})
+dfchis <- data.frame(apps = app, p = round(listachis, 3))
+
+frecapp_egreso <- bdcoving%>%filter(motivoegre %in% c(2,3) & rescov1 == 1) %>%
+  select(c(motivoegre, starts_with('app'))) %>%
+  pivot_longer(starts_with('app'), names_to = 'apps', values_to = 'valor')%>%
+  group_by(motivoegre, apps, valor) %>%
+  mutate(motivoegre = factor(motivoegre, levels = c(2,3), labels = c('Mejoría', 'Defunción')),
+         apps = factor(apps, levels = nomappord, labels = app),
+         valor = factor(valor, levels = c(1,2), labels = c('Si', 'No')))%>%
+  summarise(n = n())%>%
+  mutate(frec = round(n/sum(n)*100, 2),
+         total = sum(n)) %>%
+  pivot_wider(names_from = motivoegre, values_from = c(n, frec, total)) %>%
+  mutate(total = `n_Defunción` + `n_Mejoría`,
+         pordef = round(`n_Defunción`/total*100, 1),
+         pormejo = round(`n_Mejoría`/total*100, 1),
+         muertos = paste0(str_pad(`n_Defunción`,4,side = 'right', pad = ' '), '(', pordef, '%)'),
+         vivos = paste0(str_pad(`n_Mejoría`,4,side = 'right'), '(', pormejo, '%)')) %>% 
+  select(apps, valor, total, muertos, vivos) %>%
+  left_join(dfchis, by = 'apps' ) %>%
+  filter(!is.na(valor) )%>%
+  select(apps, valor, total, muertos, vivos, p) %>%
+  arrange(p, by_group = TRUE)%>%
+  filter(apps != 'CONJUNTIVITIS') %>%
+  rename(Variable = apps,Valor = valor , Total = total, `Defunción` = muertos, `Mejoría` = vivos)
+kable(frecapp_egreso)
+
+
+```
+
+## Information of combined comorbidities
+
+```{r numapp-glob, message=FALSE, warning=FALSE}
 facanum <- function(x){
   as.numeric(as.character(x))
 }
@@ -95,7 +99,6 @@ numappglob <- bdcoving %>%
   rowwise()%>%
   mutate(across(starts_with('app'), facanum) ) %>%
   mutate(numapp = (length(nomappord)-sum(is.na(c_across(starts_with('app')))))*2 - sum(c_across(starts_with('app')), na.rm = TRUE))%>%
-  #mutate(numapp = 36 - sum(c_across(starts_with('app')), na.rm = TRUE))%>% el código de arriba toma en cuenta los nas, los valores salen diferentes
   select(motivoegre, numapp)%>%
   ungroup %>%
   mutate(numapp = case_when(
@@ -114,45 +117,12 @@ numappglob <- bdcoving %>%
            Número = n,
            Porcentaje = frec,
            Total = validos)
+kable(numappglob)
+```
 
-# Frecuencia de app agrupado por motivoegre y chi cuadrada
-# 1) hago una base con el motivo de egreso y las variables categóricas con las que quiero hacer la chi cuadrada
-bdcat <- bdcoving%>%filter(motivoegre %in% c(2,3) & rescov1 == 1) %>% 
-  mutate(motivoegre = factor(motivoegre, levels = c(2,3), labels = c('Mejoría', 'Defunción')))%>%
-  select(c(motivoegre, starts_with('app')))
-names(bdcat)
-# 2) calculo la chi cuadrada para cada antecedente contra el motivo de egreso
-listachis <- apply(bdcat[,-1],2, function(i){chisq.test(table(i, bdcat$motivoegre))$p.value})
-listachis
+## Association of number of combined comorbidities and outcome.
 
-# 3) hago una base de datos con los nombres de los antecedentes y el valor de p, para unirlo en la base de datos
-dfchis <- data.frame(apps = app, p = round(listachis, 3))
-
-# hago la tabla con las frecuencias por motivo de egreso, añadiendo el valor de p de la chi cuadrada
-frecapp_egreso <- bdcoving%>%filter(motivoegre %in% c(2,3) & rescov1 == 1) %>%
-  select(c(motivoegre, starts_with('app'))) %>%
-  pivot_longer(starts_with('app'), names_to = 'apps', values_to = 'valor')%>%
-  group_by(motivoegre, apps, valor) %>%
-  mutate(motivoegre = factor(motivoegre, levels = c(2,3), labels = c('Mejoría', 'Defunción')),
-         apps = factor(apps, levels = nomappord, labels = app),
-         valor = factor(valor, levels = c(1,2), labels = c('Si', 'No')))%>%
-  summarise(n = n())%>%
-  mutate(frec = round(n/sum(n)*100, 2),
-         total = sum(n)) %>%
-  pivot_wider(names_from = motivoegre, values_from = c(n, frec, total)) %>%
-  mutate(total = `n_Defunción` + `n_Mejoría`,
-         pordef = round(`n_Defunción`/total*100, 1),
-         pormejo = round(`n_Mejoría`/total*100, 1),
-         muertos = paste0(str_pad(`n_Defunción`,4,side = 'right', pad = ' '), '(', pordef, '%)'),
-         vivos = paste0(str_pad(`n_Mejoría`,4,side = 'right'), '(', pormejo, '%)')) %>% #usé unite con las numéricas.
-  select(apps, valor, total, muertos, vivos) %>%
-  left_join(dfchis, by = 'apps' ) %>%
-  filter(!is.na(valor) )%>%
-  select(apps, valor, total, muertos, vivos, p) %>%
-  arrange(p, by_group = TRUE)%>%
-  rename(Variable = apps,Valor = valor , Total = total, `Defunción` = muertos, `Mejoría` = vivos)
-
-# cantidad de antecedentes por paciente con su chi cuadrada:
+```{r label = numapp-motivoegre}
 facanum <- function(x){
   as.numeric(as.character(x))
 }
@@ -162,8 +132,7 @@ numappchi <- bdcoving %>%
   rowwise()%>%
   mutate(across(starts_with('app'), facanum) ) %>%
   mutate(numapp = (length(nomappord)-sum(is.na(c_across(starts_with('app')))))*2 - sum(c_across(starts_with('app')), na.rm = TRUE))%>%
-  #mutate(numapp = 36 - sum(c_across(starts_with('app')), na.rm = TRUE))%>%
-  select(motivoegre, numapp) %>%
+  select(motivoegre, numapp)%>%
   ungroup %>%
   mutate(numapp = case_when(
     numapp == 0 ~ 'No',
@@ -172,11 +141,8 @@ numappchi <- bdcoving %>%
   ))%>%
   mutate(numapp = factor(numapp, levels = c('No', 'Una', 'Más de una')))
 
-str(numappchi)
 tablanumapp <- table(`Número de enfermedades previas` = numappchi$numapp, Evolución = numappchi$motivoegre)
-tablanumapp
 tablapropnumapp <- round(prop.table(tablanumapp, margin = 2)*100,2)
-tablapropnumapp
 chinumapp <- chisq.test(table(numappchi$numapp, numappchi$motivoegre))$p.value
 chinumapp <- round(chinumapp, 3)
 
@@ -193,74 +159,73 @@ numapps_egreso <-numappchi %>%
   select(numapp, total, muertos, vivos, p) %>%
   #arrange(p, by_group = TRUE)%>%
   rename(`Number of associated comorbidities` = numapp, Total = total, `Defunción` = muertos, `Mejoría` = vivos)
+kable(numapps_egreso)
+```
 
-#___________
-  numapps_egreso <-numappchi %>% group_by(motivoegre, numapp)%>%
-    summarise(n = n()) %>%
-    mutate(frec = round(n/sum(n)*100, 2),
-           total = sum(n),
-           validos = sum(n)- sum(is.na(numapp)),
-           chi = chinumapp)%>%
-    select(numapp, motivoegre, n, frec, validos, chi) %>%
-    rename(`Número de enfermedades previas` = numapp,
-           Evolución = motivoegre,
-           Número = n,
-           Porcentaje = frec,
-           Total = validos,
-           `chi cuadrada` = chi)
-#hice una v de cramer, pero salió de .12.
-# install.packages('questionr')
-# library(questionr)
-# ls('package:questionr')         
-# cramer.v(tablanumapp)
-# detach(package:questionr)
-
-# t con imc y motivoegre
-bdcoving%>%filter(motivoegre %in% c(2,3)  & rescov1 == 1) %>%
-  select(motivoegre, imc) %>%
-  mutate(motivoegre = factor(motivoegre, levels = c(2,3), labels = c('Mejoría', 'Defunción')))%>%
-  t.test(imc ~ motivoegre, data = .)
-         
-
-# TRATAMIENTO ANTES DEL INTERNAMIENTO -------------------------------------
-
-#__________________________________________________________________________________
-# Código para:
-# 1) una tabla con la frecuencia de los tratamientos previos en la base
-# 2) una tabla con la frecuencia de tratamientos previos por motivo de egreso
-# 3) cálCulo de chis cuadradas de tratamientos previos contra motivo de egreso
-# 4) añadir las chis a la tabla2
-# 5) código para cantidad de antecedentes por paciente
-#__________________________________________________________________________________
-
-
-library(tidyverse)
-#cargo bdcoving
-load('Rdata/bdcoving.rda')
+## Treatments before hospitalization.
+```{r tx-prev }
 txprev <- read_lines('bases-originales/nomtxprev.txt')
 txprev <- str_split(txprev, '\t')[[1]] %>%
   str_trim()%>%
-  str_replace_all('\\s|-', "_") #cuando copio y pego la cadena de encabezados de Excel, sale \t que es un tabulador
-txprev
+  str_replace_all('\\s|-', "_")
 nomtxprevord <- bdcoving%>%select(starts_with('txprev'))%>%names
-nomtxprevord
 
-# solo emplearemos los pacientes con resultado de la prueba covid
-
-#Frecuencia global de tratamientos previos
 frectxprev <- bdcoving%>%
   filter(motivoegre %in% c(2,3) & rescov1 == 1)%>%
   pivot_longer(starts_with('txprev'), names_to = 'txprevs', values_to = 'valor')%>%
   group_by(txprevs, valor) %>%
-  mutate(txprevs = factor(txprevs, levels = nomtxprevord, labels = txprev), #AQUÍ CAMBIO txprev_n A NOMBRE DE LOS MEDICAMENTOS
+  mutate(txprevs = factor(txprevs, levels = nomtxprevord, labels = txprev), 
          valor = factor(valor, levels = c(1,2), labels = c('Si', 'No')))%>%
   summarise(n = n())%>%
   mutate(frec = round(n/sum(n)*100, 2), total = sum(n))%>%filter(valor == 'Si')%>%
   arrange(desc(frec))%>%
   rename(Antecedentes = txprevs, Cantidad = n, Porcentaje = frec, Total = total)%>%
   select(Antecedentes, Cantidad, Porcentaje, Total)
+kable(frectxprev)
 
-#Cantidad de tratamientosacumulados por persona:
+```
+
+## Treatments before hospitalization by outcome
+
+```{r txprev-motivoegre}
+bdcat <- bdcoving%>%filter(motivoegre %in% c(2,3) & rescov1 == 1) %>% 
+  mutate(motivoegre = factor(motivoegre, levels = c(2,3), labels = c('Mejoría', 'Defunción')))%>%
+  select(c(motivoegre, starts_with('txprev')))
+listachis <- apply(bdcat[,2:23],2, function(i){chisq.test(table(i, bdcat$motivoegre))$p.value})
+
+dfchis <- data.frame(apps = txprev, p = round(listachis, 3))
+
+frectxprev_egreso <- bdcoving%>%
+  filter(motivoegre %in% c(2,3) & rescov1 == 1) %>%
+  select(c(motivoegre, starts_with('txprev'))) %>%
+  pivot_longer(starts_with('txprev'), names_to = 'apps', values_to = 'valor')%>%
+  group_by(motivoegre, apps, valor) %>%
+  mutate(motivoegre = factor(motivoegre, levels = c(2,3), labels = c('Mejoría', 'Defunción')),
+         apps = factor(apps, levels = nomtxprevord, labels = txprev),
+         valor = factor(valor, levels = c(1,2), labels = c('Si', 'No')))%>%
+  summarise(n = n())%>%
+  mutate(frec = round(n/sum(n)*100, 2),
+         total = sum(n)) %>%
+  pivot_wider(names_from = motivoegre, values_from = c(n, frec, total)) %>%
+  mutate(total = `n_Defunción` + `n_Mejoría`,
+         pordef = round(`n_Defunción`/total*100, 1),
+         pormejo = round(`n_Mejoría`/total*100, 1),
+         muertos = paste0(str_pad(`n_Defunción`,4,side = 'right', pad = ' '), '(', pordef, '%)'),
+         vivos = paste0(str_pad(`n_Mejoría`,4,side = 'right'), '(', pormejo, '%)')) %>% 
+  select(apps, valor, total, muertos, vivos) %>%
+  left_join(dfchis, by = 'apps' ) %>%
+  filter(!is.na(valor) )%>%
+  select(apps, valor, total, muertos, vivos, p) %>%
+  arrange(p, by_group = TRUE)%>%
+  filter(!(apps %in% c('DIÓXIDO_DE_CLORO', 'INTERFERON', 'ANAFERON' ))) %>%
+  rename(Variable = apps,Valor = valor , Total = total, `Defunción` = muertos, `Mejoría` = vivos)
+kable(frectxprev_egreso)
+
+```
+
+## Number of treatment combinations before hospitalization 
+
+```{r numtxprev-global}
 facanum <- function(x){
   as.numeric(as.character(x))
 }
@@ -288,55 +253,12 @@ numtxprevglob <- bdcoving %>%
          Número = n,
          Porcentaje = frec,
          Total = validos)
+kable(numtxprevglob)
+```
 
-# Checar problemas en txprev, poner el gato antes de ungroup()
-#  table(numtxprevglob$numtxprev)
-# indneg <- which(numtxprevglob$numtxprev %in% c(-18, -6)) 
-# indneg +2 #lo añado al ScrDepuCoving.R
+## Number of treatment combinations before hospitalization by outcome
 
-
-
-
-
-# Frecuencia de txprev agrupado por motivoegre y chi cuadrada
-# 1) hago una base con el motivo de egreso y las variables categóricas con las que quiero hacer la chi cuadrada
-bdcat <- bdcoving%>%filter(motivoegre %in% c(2,3) & rescov1 == 1) %>% 
-  mutate(motivoegre = factor(motivoegre, levels = c(2,3), labels = c('Mejoría', 'Defunción')))%>%
-  select(c(motivoegre, starts_with('txprev')))
-names(bdcat)
-# 2) calculo la chi cuadrada para cada tratamiento previo contra el motivo de egreso
-listachis <- apply(bdcat[,2:23],2, function(i){chisq.test(table(i, bdcat$motivoegre))$p.value})
-listachis
-
-# 3) hago una base de datos con los nombres de los tratmientos previos y el valor de p, para unirlo en la base de datos
-dfchis <- data.frame(apps = txprev, p = round(listachis, 3))
-
-# hago la tabla con las frecuencias por motivo de egreso, añadiendo el valor de p de la chi cuadrada
-frectxprev_egreso <- bdcoving%>%
-  filter(motivoegre %in% c(2,3) & rescov1 == 1) %>%
-  select(c(motivoegre, starts_with('txprev'))) %>%
-  pivot_longer(starts_with('txprev'), names_to = 'apps', values_to = 'valor')%>%
-  group_by(motivoegre, apps, valor) %>%
-  mutate(motivoegre = factor(motivoegre, levels = c(2,3), labels = c('Mejoría', 'Defunción')),
-         apps = factor(apps, levels = nomtxprevord, labels = txprev),
-         valor = factor(valor, levels = c(1,2), labels = c('Si', 'No')))%>%
-  summarise(n = n())%>%
-  mutate(frec = round(n/sum(n)*100, 2),
-         total = sum(n)) %>%
-  pivot_wider(names_from = motivoegre, values_from = c(n, frec, total)) %>%
-  mutate(total = `n_Defunción` + `n_Mejoría`,
-         pordef = round(`n_Defunción`/total*100, 1),
-         pormejo = round(`n_Mejoría`/total*100, 1),
-         muertos = paste0(str_pad(`n_Defunción`,4,side = 'right', pad = ' '), '(', pordef, '%)'),
-         vivos = paste0(str_pad(`n_Mejoría`,4,side = 'right'), '(', pormejo, '%)')) %>% #usé unite con las numéricas.
-  select(apps, valor, total, muertos, vivos) %>%
-  left_join(dfchis, by = 'apps' ) %>%
-  filter(!is.na(valor) )%>%
-  select(apps, valor, total, muertos, vivos, p) %>%
-  arrange(p, by_group = TRUE)%>%
-  rename(Variable = apps,Valor = valor , Total = total, `Defunción` = muertos, `Mejoría` = vivos)
-
-# cantidad de antecedentes por paciente con su chi cuadrada:
+```{r numtxprev-motivoegre}
 facanum <- function(x){
   as.numeric(as.character(x))
 }
@@ -346,7 +268,6 @@ numtxprevchi <- bdcoving %>%
   rowwise()%>%
   mutate(across(starts_with('txprev'), facanum) ) %>%
   mutate(numtxprev = (length(nomtxprevord)-sum(is.na(c_across(starts_with('txprev')))))*2 - sum(c_across(starts_with('txprev')), na.rm = TRUE))%>%
-  #mutate(numtxprev = 36 - sum(c_across(starts_with('txprev')), na.rm = TRUE))%>%
   select(motivoegre, numtxprev)%>%
   ungroup %>%
   mutate(numtxprev = case_when(
@@ -355,14 +276,9 @@ numtxprevchi <- bdcoving %>%
     numtxprev > 1  ~ 'Más de uno'
   ))%>%
   mutate(numtxprev = factor(numtxprev, levels = c('No', 'Uno', 'Más de uno')))
-str(numtxprevchi)
-tablanumtxprev <- table(`Número de tratamientos previos` = numtxprevchi$numtxprev, Evolución = numtxprevchi$motivoegre)
-tablanumtxprev
-tablapropnumtxprev <- round(prop.table(tablanumtxprev, margin = 2)*100,2)
-tablapropnumtxprev
+
 chinumtxprev <- chisq.test(table(numtxprevchi$numtxprev, numtxprevchi$motivoegre))$p.value
 chinumtxprev <- round(chinumtxprev, 3)
-chinumtxprev
 
 numtxprevs <-numtxprevchi %>% group_by(motivoegre, numtxprev)%>%
   summarise(n = n()) %>%
@@ -378,30 +294,18 @@ numtxprevs <-numtxprevchi %>% group_by(motivoegre, numtxprev)%>%
          Total =total,
          `Defunción` = muertos,
          `Mejoría` = vivos)
+kable(numtxprevs)
+```
 
-#Código para probar si los resultados son confiables. Selecciono un tx y lo checo con chi.
-# prueba <- bdcoving%>%filter(motivoegre %in% c(2,3)) %>%
-#   mutate(motivoegre = factor(motivoegre, levels = c(2,3), labels = c('Mejoría', 'Defunción')))
-# table(prueba$txprev_4, prueba$motivoegre)
-# rm(prueba)
+## Treatments during hospitalization
 
-# TRATAMIENTOS DURANTE LA HOSPITALIZACIÓN ---------------------------------
-
-library(tidyverse)
-#cargo bdcoving
-load('Rdata/bdcoving.rda')
+```{r frectxhosp-global}
 txhosp <- read_lines('bases-originales/nomtxhosp.txt')
 txhosp <- str_split(txhosp, '\t')[[1]] %>%
   str_trim()%>%
-  str_replace_all('\\s|-', "_") #cuando copio y pego la cadena de encabezados de Excel, sale \t que es un tabulador
-txhosp
+  str_replace_all('\\s|-', "_") 
 nomtxhospord <- bdcoving%>%select(starts_with('txhosp'))%>%names
-nomtxhospord
 
-# solo emplearemos los pacientes con resultado de la prueba covid
-
-
-#Frecuencia global de tratamientos hospitalarios
 frectxhosp <- bdcoving%>%
   filter(motivoegre %in% c(2,3) & rescov1 == 1)%>%
   pivot_longer(starts_with('txhosp'), names_to = 'txhosps', values_to = 'valor')%>%
@@ -413,56 +317,21 @@ frectxhosp <- bdcoving%>%
   arrange(desc(frec))%>%
   rename(Tratamientos = txhosps, Cantidad = n, Porcentaje = frec, Total = total)%>%
   select(Tratamientos, Cantidad, Porcentaje, Total)
+kable(frectxhosp)
 
-#Cantidad de tx hospitalarios acumulados por persona:
-facanum <- function(x){
-  as.numeric(as.character(x))
-}
+```
 
-numtxhospglob <- bdcoving %>%
-  filter(motivoegre %in% c(2,3) & rescov1 == 1)%>%
-  mutate(across(starts_with('txhosp'), facanum) ) %>%
-  rowwise()%>%
-  mutate(numtxhosp = (length(nomtxhospord)-sum(is.na(c_across(starts_with('txhosp')))))*2 - sum(c_across(starts_with('txhosp')), na.rm = TRUE))%>%
-  select(motivoegre, numtxhosp) %>%
-  ungroup %>%
-  # mutate(numtxhosp = case_when(
-  #   numtxhosp == 0 ~ 'No',
-  #   numtxhosp == 1 ~ 'Uno',
-  #   numtxhosp > 1  ~ 'Más de uno'
-  # ))%>%
-  # mutate(numtxhosp = factor(numtxhosp, levels = c('No', 'Uno', 'Más de uno')))%>%
-  group_by(numtxhosp)%>%
-  summarise(n = n()) %>%
-  mutate(frec = round(n/sum(n)*100, 2),
-         total = sum(n),
-         validos = sum(n)- sum(is.na(numtxhosp)))%>%
-  select(numtxhosp, n, frec, validos) %>%
-  rename(`Número de fármacos administrados` = numtxhosp,
-         Número = n,
-         Porcentaje = frec,
-         Total = validos)
+## Treatments during hospitalization by outcome
 
-# Checar problemas en txhosp, poner el gato antes de ungroup()
-#  table(numtxhospglob$numtxhosp)
-# indneg <- which(numtxhospglob$numtxhosp %in% c(-18, -6))
-# indneg +2 #lo añado al ScrDepuCoving.R
-
-# Frecuencia de txhosp agrupado por motivoegre y chi cuadrada
-# 1) hago una base con el motivo de egreso y las variables categóricas con las que quiero hacer la chi cuadrada
+```{r frectxhosp-egreso}
 bdcat <- bdcoving%>%
   filter(motivoegre %in% c(2,3) & rescov1 == 1) %>% 
   mutate(motivoegre = factor(motivoegre, levels = c(2,3), labels = c('Mejoría', 'Defunción')))%>%
   select(c(motivoegre, starts_with('txhosp')))
-names(bdcat)
-# 2) calculo la chi cuadrada para cada tratamiento previo contra el motivo de egreso
 listachis <- apply(bdcat[,2:21],2, function(i){chisq.test(table(i, bdcat$motivoegre))$p.value})
-listachis
 
-# 3) hago una base de datos con los nombres de los tratmientos previos y el valor de p, para unirlo en la base de datos
 dfchis <- data.frame(apps = txhosp, p = round(listachis, 3))
 
-# hago la tabla con las frecuencias por motivo de egreso, añadiendo el valor de p de la chi cuadrada
 frectxhosp_egreso <- bdcoving%>%
   filter(motivoegre %in% c(2,3) & rescov1 == 1) %>%
   select(c(motivoegre, starts_with('txhosp'))) %>%
@@ -479,69 +348,47 @@ frectxhosp_egreso <- bdcoving%>%
          pordef = round(`n_Defunción`/total*100, 1),
          pormejo = round(`n_Mejoría`/total*100, 1),
          muertos = paste0(str_pad(`n_Defunción`,4,side = 'right', pad = ' '), '(', pordef, '%)'),
-         vivos = paste0(str_pad(`n_Mejoría`,4,side = 'right'), '(', pormejo, '%)')) %>% #usé unite con las numéricas.
+         vivos = paste0(str_pad(`n_Mejoría`,4,side = 'right'), '(', pormejo, '%)')) %>% 
   select(apps, valor, total, muertos, vivos) %>%
   left_join(dfchis, by = 'apps' ) %>%
   filter(!is.na(valor) )%>%
   select(apps, valor, total, muertos, vivos, p) %>%
   arrange(p, by_group = TRUE)%>%
   rename(`Tratamientos previos` = apps,Valor = valor , Total = total, `Defunción` = muertos, `Mejoría` = vivos)
+kable(frectxhosp_egreso)
 
+```
 
-# cantidad de tx hospitalarios por paciente con su chi cuadrada:
+## Number of treatment combinations during hospitalization
+
+```{r numtxhosp-global}
 facanum <- function(x){
   as.numeric(as.character(x))
 }
-numtxhospchi <- bdcoving %>%
-  filter(motivoegre %in% c(2,3) & rescov1 == 1) %>% 
-  mutate(motivoegre = factor(motivoegre, levels = c(2,3), labels = c('Mejoría', 'Defunción')))%>%
-  rowwise()%>%
+
+numtxhospglob <- bdcoving %>%
+  filter(motivoegre %in% c(2,3) & rescov1 == 1)%>%
   mutate(across(starts_with('txhosp'), facanum) ) %>%
+  rowwise()%>%
   mutate(numtxhosp = (length(nomtxhospord)-sum(is.na(c_across(starts_with('txhosp')))))*2 - sum(c_across(starts_with('txhosp')), na.rm = TRUE))%>%
-  #mutate(numtxhosp = 36 - sum(c_across(starts_with('txhosp')), na.rm = TRUE))%>%
-  select(motivoegre, numtxhosp)%>%
+  select(motivoegre, numtxhosp) %>%
   ungroup %>%
-  mutate(numtxhosp = case_when(
-    numtxhosp == 0 ~ 'No',
-    #numtxhosp == 1 ~ 'Uno', #en este caso, no hubo unos, si lo dejo, da error en la chi.
-    numtxhosp > 1  ~ 'Más de uno'
-  ))%>%
-  mutate(numtxhosp = factor(numtxhosp, levels = c('No', 'Más de uno')))
-
-str(numtxhospchi)
-tablanumtxhosp <- table(`Número de tratamientos previos` = numtxhospchi$numtxhosp, Evolución = numtxhospchi$motivoegre)
-tablanumtxhosp
-tablapropnumtxhosp <- round(prop.table(tablanumtxhosp, margin = 2)*100,2)
-tablapropnumtxhosp
-chinumtxhosp <- chisq.test(table(numtxhospchi$numtxhosp, numtxhospchi$motivoegre))$p.value
-chinumtxhosp <- round(chinumtxhosp, 3)
-chinumtxhosp
-
-numtxhosps <-numtxhospchi %>% group_by(motivoegre, numtxhosp)%>%
+  group_by(numtxhosp)%>%
   summarise(n = n()) %>%
   mutate(frec = round(n/sum(n)*100, 2),
          total = sum(n),
-         validos = sum(n)- sum(is.na(numtxhosp)),
-         chi = chinumtxhosp)%>%
-  select(numtxhosp, motivoegre, n, frec, validos, chi) %>%
-  rename(`Número de tratamientos en hospital` = numtxhosp,
-         Evolución = motivoegre,
+         validos = sum(n)- sum(is.na(numtxhosp)))%>%
+  select(numtxhosp, n, frec, validos) %>%
+  rename(`Número de fármacos administrados` = numtxhosp,
          Número = n,
          Porcentaje = frec,
-         Total = validos,
-         `chi cuadrada` = chi)
+         Total = validos)
+kable(numtxhospglob)
+```
 
-#_______________________________________________________________
-# El cálculo de cantidad de tx intrahospitalarios no es muy útil, sería mejor ver combinaciones.
-#Uniré los tratamientos en una cadena y lo convertiré en factor
-# se usa el verbo unite()
-combtxhosp <- bdcoving %>%
- filter(motivoegre %in% c(2,3) & rescov1 == 1) %>%
- select(c(motivoegre, starts_with('txhosp'))) %>%
- unite('txhosp_com', starts_with('txhosp'))
-table(combtxhosp$txhosp_com)
+## Combination of treatments during hospitalization
 
-# demasiadas combinaciones. otra estrategia, poner todos los txhosp en una variable y filtrar los 1.
+```{r combtx-hosp}
 fcomb <- function(x){
   cad <- str_c(x, sep = ',', collapse = TRUE)
   return(cad)
@@ -550,8 +397,7 @@ fcomb <- function(x){
 txhospabr <- read_lines('bases-originales/nomtxhospabr.txt')
 txhospabr <- str_split(txhospabr, '\t')[[1]] %>%
   str_trim()%>%
-  str_replace_all('\\s|-', "_") #cuando copio y pego la cadena de encabezados de Excel, sale \t que es un tabulador
-txhospabr
+  str_replace_all('\\s|-', "_") 
 
 combtxhosp <- bdcoving %>%
   filter(motivoegre %in% c(2,3) & rescov1 == 1) %>%
@@ -567,8 +413,13 @@ combtxhosp <- bdcoving %>%
             mort = sum(motivoegre == 3),
             propmort = round(100*sum(motivoegre == 3)/n(), 1)) %>%
   arrange(desc(n))# %>%filter(n > 1)
+kable(combtxhosp)
 
-# veo el comportamiento de la asociación de colchicina + clopidogrel, colchicina, colchicina sin clopidogrel
+```
+
+# Colchicine plus clopidogrel treatment.
+
+```{r comb-cochiclopi}
 comb2 <- bdcoving %>%
   filter(motivoegre %in% c(2,3) & rescov1 == 1) %>% 
   mutate(motivoegre = factor(motivoegre, levels = c(2,3), labels = c('Mejoría', 'Defunción')))%>%
@@ -582,12 +433,15 @@ comb2 <- bdcoving %>%
   )) %>%
   select(nss, motivoegre, colchiclopi)
   
-tcomb2 <- table(comb2$motivoegre, comb2$colchiclopi)
-tcomb2
+tcomb2 <- table(outcome = comb2$motivoegre, Treatment = comb2$colchiclopi)
+kable(tcomb2)
 chisq.test(tcomb2)
 
+```
 
-#selecciono en combtxhosp solo las colchis.
+# Mortality in treatments which included colchicine
+
+```{r combtx-concolchi}
 bdcolchis <- bdcoving %>%
   filter(motivoegre %in% c(2,3) & rescov1 == 1) %>%
   select(c(nss, motivoegre, starts_with('txhosp'))) %>%
@@ -605,18 +459,12 @@ bdcolchis <- bdcoving %>%
   arrange(desc(n)) %>%
   slice(str_which(comb, 'colchi')) %>%
   arrange(propmort)
+kable(bdcolchis)
+```
 
+## Demographic information
 
-
-# VARIABLES SOCIODEMOGRÁFICAS ---------------------------------------------
-
-library(tidyverse)
-load('Rdata/bdcoving.rda')
-names(bdcoving)
-
-#varsocdemo <- c('edad', 'peso', 'talla', 'sexo', 'ocupacion', 'escolaridad', 'nivsoc')
-
-#Descripción edad, peso, talla e imc.
+```{r demographics-num}
 bdvarnumglob <- bdcoving %>%filter(motivoegre %in% c(2,3) & rescov1 == 1)%>%
   select(edad, peso, talla, imc)%>%
   summarise(across(everything(), list(
@@ -627,42 +475,10 @@ bdvarnumglob <- bdcoving %>%filter(motivoegre %in% c(2,3) & rescov1 == 1)%>%
                names_sep = '_',
                names_to = c('Variable', '.value'))%>%
   unite('Promedio±DE', c(Promedio, `Desviación estándar`), sep = ' ± ')
+kable(bdvarnumglob, caption = 'Numeric variables')
+```
 
-#Análisis edad, peso, talla, imc por motivoegre y cálculo de t.
-
-bdnum <- bdcoving%>%filter(motivoegre %in% c(2,3) & rescov1 == 1) %>% 
-  mutate(motivoegre = factor(motivoegre, levels = c(2,3), labels = c('Mejoría', 'Defunción')))%>%
-  select(c(motivoegre, edad, peso, talla, imc))
-names(bdnum)
-# 2) calculo la t para cada variable contra el motivo de egreso
-listates <- apply(bdnum[,-1],2, function(i){t.test(i ~ bdnum$motivoegre)$p.value})
-listates
-# 3) hago una base de datos con los nombres de los antecedentes y el valor de p, para unirlo en la base de datos
-dftes <- data.frame(Variable = c('edad', 'peso', 'talla', 'imc'), p = round(listates, 3))
-
-bdvarnummotiegre <- bdcoving %>%
-  filter(motivoegre %in% c(2,3) & rescov1 == 1) %>% 
-  mutate(motivoegre = factor(motivoegre, levels = c(2,3), labels = c('Mejoría', 'Defunción')))%>%
-  select(motivoegre, edad, peso, talla, imc)%>%
-  group_by(motivoegre) %>%
-  summarise(across(everything(), list(
-    Promedio = ~ round(mean(.x, na.rm = TRUE),2),
-    `Desviación estándar` = ~ round(sd(.x, na.rm = TRUE),2)
-  )))%>%
-  pivot_longer(cols = -motivoegre,
-               names_sep = '_',
-               names_to = c('Variable', '.value')) %>%
-  left_join(dftes, by = 'Variable')%>%
-  #rename(expression(italic(p))= p)
-  unite('Promedio±DE', c(Promedio, `Desviación estándar`), sep = ' ± ') %>%
-  select(Variable, motivoegre, `Promedio±DE`, p  )%>%
-  rename(`Motivo de egreso` = motivoegre)%>%
-  arrange(Variable)
-
-#_____________________________________________________________________________________________#
-#Análisis de'sexo', 'ocupacion', 'escolaridad', 'nivsoc'
-#Cada variable tiene diferentes factores, hago una dataframe para cada variable y luego las uno
-
+```{r demographics-cat}
 frecsexo <- bdcoving%>%
   filter(motivoegre %in% c(2,3), rescov1 == 1)%>%
   select(sexo)%>%
@@ -673,9 +489,6 @@ frecsexo <- bdcoving%>%
   arrange(frec)%>%
   rename(Variable = apps,Valor = valor , Cantidad = n, Porcentaje = frec, Total = total)%>%
   select(Variable, Valor, Cantidad, Porcentaje, Total)
-
-#la ocupación tiene un 7 que no está codificado, como es un solo caso lo filtro.
-table(bdcoving$ocupacion)
 
 frecocup <- bdcoving%>%
   filter(motivoegre %in% c(2,3),rescov1 == 1, ocupacion != 7)%>%
@@ -696,9 +509,6 @@ frecocup <- bdcoving%>%
   arrange(frec)%>%
   rename(Variable = apps,Valor = valor , Cantidad = n, Porcentaje = frec, Total = total)%>%
   select(Variable, Valor, Cantidad, Porcentaje, Total)
-
-#Ahora escolaridad
-table(bdcoving$escolaridad)
 
 frecescol <- bdcoving%>%
   filter(motivoegre %in% c(2,3),rescov1 == 1)%>%
@@ -721,29 +531,6 @@ frecescol <- bdcoving%>%
   rename(Variable = apps,Valor = valor , Cantidad = n, Porcentaje = frec, Total = total)%>%
   select(Variable, Valor, Cantidad, Porcentaje, Total)
 
-#Ahora nivel socioeconómico
-table(bdcoving$nivsoc)
-
-# frecnivsoc <- bdcoving%>%
-#   filter(motivoegre %in% c(2,3),rescov1 == 1)%>%
-#   select(nivsoc)%>%
-#   mutate(nivsoc = case_when(
-#     nivsoc == 1 ~ 'Bajo',
-#     nivsoc == 2 ~ 'Medio-bajo',
-#     nivsoc == 3 ~ 'Medio-alto',
-#     nivsoc == 4 ~ 'Alto'
-#   ))%>%
-#   na.omit %>%
-#   rename( `Nivel socioeconómico` = nivsoc) %>%
-#   pivot_longer(`Nivel socioeconómico`, names_to = 'apps', values_to = 'valor') %>%
-#   group_by(apps, valor) %>%
-#   summarise(n = n()) %>%
-#   mutate(frec = round(n/sum(n)*100, 2), total = sum(n))%>%
-#   arrange(frec)%>%
-#   rename(Variable = apps,Valor = valor , Cantidad = n, Porcentaje = frec, Total = total)%>%
-#   select(Variable, Valor, Cantidad, Porcentaje, Total)
-
-# nivsoc con dos niveles:
 frecnivsoc <- bdcoving%>%
   filter(motivoegre %in% c(2,3),rescov1 == 1)%>%
   select(nivsoc)%>%
@@ -761,15 +548,43 @@ frecnivsoc <- bdcoving%>%
   rename(Variable = apps,Valor = valor , Cantidad = n, Porcentaje = frec, Total = total)%>%
   select(Variable, Valor, Cantidad, Porcentaje, Total)
 
-#Uno las dataframe:
 dbvarsocdemglob <- bind_rows(frecsexo,frecocup,frecescol,frecnivsoc) %>%
   mutate (`n (%)` = paste0(Cantidad, ' (', Porcentaje, ')')) %>%
   select(Variable, Valor, `n (%)`, Total)
- 
-#_________________________________________________________________________________
+kable(dbvarsocdemglob, caption = 'Categorical variables')
 
-#Igual que arriba, pero distribuidas por motivoegre
+```
 
+## Demographic information by outcome
+
+```{r demographics-num-motivoegre}
+bdnum <- bdcoving%>%filter(motivoegre %in% c(2,3) & rescov1 == 1) %>% 
+  mutate(motivoegre = factor(motivoegre, levels = c(2,3), labels = c('Mejoría', 'Defunción')))%>%
+  select(c(motivoegre, edad, peso, talla, imc))
+listates <- apply(bdnum[,-1],2, function(i){t.test(i ~ bdnum$motivoegre)$p.value})
+dftes <- data.frame(Variable = c('edad', 'peso', 'talla', 'imc'), p = round(listates, 3))
+
+bdvarnummotiegre <- bdcoving %>%
+  filter(motivoegre %in% c(2,3) & rescov1 == 1) %>% 
+  mutate(motivoegre = factor(motivoegre, levels = c(2,3), labels = c('Mejoría', 'Defunción')))%>%
+  select(motivoegre, edad, peso, talla, imc)%>%
+  group_by(motivoegre) %>%
+  summarise(across(everything(), list(
+    Promedio = ~ round(mean(.x, na.rm = TRUE),2),
+    `Desviación estándar` = ~ round(sd(.x, na.rm = TRUE),2)
+  )))%>%
+  pivot_longer(cols = -motivoegre,
+               names_sep = '_',
+               names_to = c('Variable', '.value')) %>%
+  left_join(dftes, by = 'Variable')%>%
+  unite('Promedio±DE', c(Promedio, `Desviación estándar`), sep = ' ± ') %>%
+  select(Variable, motivoegre, `Promedio±DE`, p  )%>%
+  rename(`Motivo de egreso` = motivoegre)%>%
+  arrange(Variable)
+kable(bdvarnummotiegre, caption = 'Numeric variables')
+```
+
+```{r demographics-cat-motivoegre}
 frecsexoegre <- bdcoving%>%
   filter(motivoegre %in% c(2,3), rescov1 == 1)%>%
   select(motivoegre, sexo)%>%
@@ -784,16 +599,11 @@ frecsexoegre <- bdcoving%>%
          pordef = round(`n_Defunción`/total*100, 1),
          pormejo = round(`n_Mejoría`/total*100, 1),
          muertos = paste0(str_pad(`n_Defunción`,4,side = 'right', pad = ' '), '(', pordef, '%)'),
-         vivos = paste0(str_pad(`n_Mejoría`,4,side = 'right'), '(', pormejo, '%)')) %>% #usé unite con las numéricas.
+         vivos = paste0(str_pad(`n_Mejoría`,4,side = 'right'), '(', pormejo, '%)')) %>% 
   select(apps, valor, total, muertos, vivos) %>%
-  #left_join(dfchis, by = 'apps' ) %>%
   filter(!is.na(valor) )%>%
   select(apps, valor, total, muertos, vivos) %>%
-  #arrange(p, by_group = TRUE)%>%
   rename(Variable = apps,Valor = valor , Total = total, `Defunción` = muertos, `Mejoría` = vivos)
-
-#la ocupación tiene un 7 que no está codificado, como es un solo caso lo filtro.
-table(bdcoving$ocupacion)
 
 frecocupegre <- bdcoving%>%
   filter(motivoegre %in% c(2,3),rescov1 == 1, ocupacion != 7)%>%
@@ -818,15 +628,10 @@ frecocupegre <- bdcoving%>%
          pordef = round(`n_Defunción`/total*100, 1),
          pormejo = round(`n_Mejoría`/total*100, 1),
          muertos = paste0(str_pad(`n_Defunción`,4,side = 'right', pad = ' '), '(', pordef, '%)'),
-         vivos = paste0(str_pad(`n_Mejoría`,4,side = 'right'), '(', pormejo, '%)')) %>% #usé unite con las numéricas.
+         vivos = paste0(str_pad(`n_Mejoría`,4,side = 'right'), '(', pormejo, '%)')) %>%
   select(apps, valor, total, muertos, vivos) %>%
-  #left_join(dfchis, by = 'apps' ) %>%
   filter(!is.na(valor)) %>%
-  #arrange(p, by_group = TRUE)%>%
   rename(Variable = apps,Valor = valor , Total = total, `Defunción` = muertos, `Mejoría` = vivos)
-
-#Ahora escolaridad
-table(bdcoving$escolaridad)
 
 frecescolegre <- bdcoving%>%
   filter(motivoegre %in% c(2,3),rescov1 == 1)%>%
@@ -854,38 +659,10 @@ frecescolegre <- bdcoving%>%
          muertos = paste0(str_pad(`n_Defunción`,4,side = 'right', pad = ' '), '(', pordef, '%)'),
          vivos = paste0(str_pad(`n_Mejoría`,4,side = 'right'), '(', pormejo, '%)')) %>% #usé unite con las numéricas.
   select(apps, valor, total, muertos, vivos) %>%
-  #left_join(dfchis, by = 'apps' ) %>%
   filter(!is.na(valor) )%>%
   select(apps, valor, total, muertos, vivos) %>%
-  #arrange(p, by_group = TRUE)%>%
   rename(Variable = apps,Valor = valor , Total = total, `Defunción` = muertos, `Mejoría` = vivos)
 
-
-#Ahora nivel socioeconómico
-table(bdcoving$nivsoc)
-
-# frecnivsocegre <- bdcoving%>%
-#   filter(motivoegre %in% c(2,3),rescov1 == 1)%>%
-#   select(motivoegre, nivsoc)%>%
-#   mutate(motivoegre = factor(motivoegre, levels = c(2,3), labels = c('Mejoría', 'Defunción'))) %>%
-#   mutate(nivsoc = case_when(
-#     nivsoc == 1 ~ 'Bajo',
-#     nivsoc == 2 ~ 'Medio-bajo',
-#     nivsoc == 3 ~ 'Medio-alto',
-#     nivsoc == 4 ~ 'Alto'
-#   ))%>%
-#   na.omit %>%
-#   rename( `Nivel socioeconómico` = nivsoc) %>%
-#   pivot_longer(`Nivel socioeconómico`, names_to = 'apps', values_to = 'valor') %>%
-#   group_by(motivoegre, apps, valor) %>%
-#   summarise(n = n()) %>%
-#   mutate(frec = round(n/sum(n)*100, 2), total = sum(n))%>%
-#   arrange(valor)%>%
-#   rename(Variable = apps,Valor = valor , Cantidad = n, Porcentaje = frec, Total = total)%>%
-#   select(Variable, motivoegre, Valor, Cantidad, Porcentaje, Total, ) %>%
-#   rename(`Motivo de egreso` = motivoegre)
-
-# nivsoc con solo dos niveles.
 frecnivsocegre <- bdcoving%>%
   filter(motivoegre %in% c(2,3),rescov1 == 1)%>%
   select(motivoegre, nivsoc)%>%
@@ -894,7 +671,6 @@ frecnivsocegre <- bdcoving%>%
     nivsoc %in% c(1,2) ~ 'Bajo, medio-bajo',
     nivsoc %in% c(3,4) ~ 'Medio-alto, alto'
   ))%>%
-  #na.omit %>%
   rename( `Nivel socioeconómico` = nivsoc) %>%
   pivot_longer(`Nivel socioeconómico`, names_to = 'apps', values_to = 'valor') %>%
   group_by(motivoegre, apps, valor) %>%
@@ -906,22 +682,14 @@ frecnivsocegre <- bdcoving%>%
          pordef = round(`n_Defunción`/total*100, 1),
          pormejo = round(`n_Mejoría`/total*100, 1),
          muertos = paste0(str_pad(`n_Defunción`,4,side = 'right', pad = ' '), '(', pordef, '%)'),
-         vivos = paste0(str_pad(`n_Mejoría`,4,side = 'right'), '(', pormejo, '%)')) %>% #usé unite con las numéricas.
+         vivos = paste0(str_pad(`n_Mejoría`,4,side = 'right'), '(', pormejo, '%)')) %>% 
   select(apps, valor, total, muertos, vivos) %>%
-  #left_join(dfchis, by = 'apps' ) %>%
   filter(!is.na(valor) )%>%
   select(apps, valor, total, muertos, vivos) %>%
-  #arrange(p, by_group = TRUE)%>%
   rename(Variable = apps,Valor = valor , Total = total, `Defunción` = muertos, `Mejoría` = vivos)
 
-
-#Uno las dataframe:
 dbvarsocdemegre <- bind_rows(frecsexoegre,frecocupegre,frecescolegre,frecnivsocegre)
-class(dbvarsocdemegre)
-
-
 #______________________________________________________________________________________
-#Creo una función que haga una cadena con la chi y blancos según los levels.
 fchipasocdem <- function(x, y){
   #p <- round(fisher.test(table(x, y), simulate.p.value = TRUE)$p.value, 3)
   p <- round(chisq.test(table(x, y))$p.value, 3)
@@ -936,13 +704,11 @@ fchipasocdem <- function(x, y){
   return(cad)
 }
 
-
 bdsexo <-bdcoving %>%
   filter(motivoegre %in% c(2,3), rescov1 == 1) %>%
   mutate(motivoegre = factor(motivoegre, levels = c(2,3)))%>%
   select(motivoegre, sexo)
 chisexo <-   fchipasocdem(bdsexo$sexo, bdsexo$motivoegre)
-chisexo
 
 bdocup <- bdcoving %>%
   filter(motivoegre %in% c(2,3), rescov1 == 1, ocupacion != 7) %>%
@@ -950,33 +716,14 @@ bdocup <- bdcoving %>%
          ocupacion = factor(ocupacion, levels = c(1,2,3,4,5,6)))%>%
   select(motivoegre, ocupacion)
 chiocup <- fchipasocdem(bdocup$ocupacion, bdocup$motivoegre)
-chiocup
-chisq.test(bdocup$ocupacion, bdocup$motivoegre)
 
-table(bdcoving$escolaridad)
 bdescol <- bdcoving %>%
   filter(motivoegre %in% c(2,3), rescov1 == 1) %>%
   mutate(motivoegre = factor(motivoegre, levels = c(2,3)),
          escolaridad = factor(escolaridad, levels = c(1,2,3,4,5,6)))%>%
   select(motivoegre, escolaridad)
 chiescol <- fchipasocdem(bdescol$escolaridad, bdescol$motivoegre)
-chiescol
-chisq.test(bdescol$motivoegre, bdescol$escolaridad)
-table(bdescol$motivoegre, bdescol$escolaridad)
 
-# table(bdcoving$nivsoc)
-# bdnivsoc <- bdcoving %>%
-#   filter(motivoegre %in% c(2,3), rescov1 == 1, nivsoc != 4) %>%
-#   mutate(motivoegre = factor(motivoegre, levels = c(2,3)),
-#          nivsoc = factor(nivsoc, levels = c(1,2,3)))%>%
-#   select(motivoegre, nivsoc)
-# chinivsoc <- fchipasocdem(bdnivsoc$nivsoc, bdnivsoc$motivoegre)
-# chinivsoc <- c(chinivsoc, '') #porque quité el nivel 4
-# chinivsoc
-# chisq.test(bdnivsoc$motivoegre, bdnivsoc$nivsoc)
-# table(bdnivsoc$motivoegre, bdnivsoc$nivsoc)
-
-#nivsoc con solo dos niveles.
 bdnivsoc <- bdcoving %>%
   filter(motivoegre %in% c(2,3), rescov1 == 1) %>%
   mutate(nivsoc = case_when(
@@ -987,49 +734,41 @@ bdnivsoc <- bdcoving %>%
          nivsoc = as.factor(nivsoc))%>%
   select(motivoegre, nivsoc)
 chinivsoc <- fchipasocdem(bdnivsoc$nivsoc, bdnivsoc$motivoegre)
-chinivsoc
-chisq.test(bdnivsoc$motivoegre, bdnivsoc$nivsoc)
-table(bdnivsoc$motivoegre, bdnivsoc$nivsoc)
 
 chisvarsocdem <- c(chisexo, chiocup, chiescol, chinivsoc)
-length(chisvarsocdem)
-dim(dbvarsocdemegre)
 
-#Añado a dbvarsocdem la columna de chi
 dbvarsocdemegre <- dbvarsocdemegre %>%
   ungroup %>%
   mutate(p = chisvarsocdem)
-class(dbvarsocdemegre) # me di cuenta que hay que desagrupar
+kable(dbvarsocdemegre, caption = 'Categorial variables')
 
-# VARIABLES CLÍNICA Y PARACLÍNICAS --------------------------------------------------
+```
 
-load('Rdata/bdcoving.rda')
-library(tidyverse)
-library(knitr)
-names(bdcoving)
-
+### Number of patients with a second test for SARS-Cov2
+```{r}
 bdcov2 <- bdcoving %>%
   mutate(cov2 = factor(cov2, levels = c(1,2), labels = c('Si', 'No'))) %>%
   select(cov2)
 
 kable(table(bdcov2$cov2), col.names = c('Segunda prueba', 'Número'))
 
-#detach('package:knitr')
-table(bdcoving$neumonia) #todos con neumonía.
+```
 
-str(bdcoving, list.len = 200)
+```{r variable-varclincat}
+
 varclincat <- bdcoving%>%
   select(c(84:157, 159)) %>%
   select(where(is.factor))%>%
   names
-varclincat
-lvarclincat <- apply(bdcoving[,varclincat], 2, function(x) table(x, useNA = 'always'))
-lvarclincat  
-lvarclincat[[3]]['NA']
+```
+
+## Análisis previo de las variables clínicas categóricas
+
+```{r varclin-bruta}
 
 frecvclinglob <- bdcoving%>%
   filter(motivoegre %in% c(2,3), rescov1 == 1)%>%
-    pivot_longer(all_of(varclincat),names_to = 'apps', values_to = 'valor') %>%
+  pivot_longer(all_of(varclincat),names_to = 'apps', values_to = 'valor') %>%
   group_by(apps, valor) %>%
   summarise(n = n()) %>%
   mutate(frec = round(n/sum(n)*100, 2), total = sum(n))%>%
@@ -1090,7 +829,13 @@ frecvclin2 <- bdvarclin %>% pivot_longer(all_of(varclincat),names_to = 'apps', v
   arrange(apps)%>%
   rename(Variable = apps,Valor = valor , Cantidad = n, Porcentaje = frec, Total = total)%>%
   select(Variable, Valor, Cantidad, Porcentaje, Total)
+kable(frecvclin2, caption = 'Datos brutos')
+```
 
+
+## Clinical characteristics 
+
+```{r frecvarlin-catglob}
 frecvclin3 <- bdvarclin %>%
   pivot_longer(c(-starts_with(c('ekg', 'gdo')), -txhashosp, -piel, -ventnoinv, -neumonia),names_to = 'apps', values_to = 'valor') %>%
   group_by(apps, valor) %>%
@@ -1099,83 +844,18 @@ frecvclin3 <- bdvarclin %>%
   arrange(apps)%>%
   rename(Variable = apps,Valor = valor , Cantidad = n, Porcentaje = frec, Total = total)%>%
   select(Variable, Valor, Cantidad, Porcentaje, Total)
+kable(frecvclin3, caption = 'Variables seleccionadas')
+```
 
-#Después de revisar la tabla, selecciono las variables que vale la pena hacer la chi,reduzco dimensiones
-# en valores pequeños.
 
-#Ejemplo de chi cuadrada con anticoag
-tbanticoag <- table(bdvarclin$anticoag, bdvarclin$motivoegre) 
-addmargins(tbanticoag, margin = 1)
-prop.table(tbanticoag, margin = 2)
-chisq.test(tbanticoag) 
-#_____________________
-# Creo las chis.
-nompachisvclin <- bdvarclin %>%
-  select(c(-starts_with(c('ekg', 'gdo')), -txhashosp, -piel, -ventnoinv, -neumonia, -motivoegre)) %>% names
-nompachisvclin
-listachisvclin <- apply(bdvarclin[, nompachisvclin],2, function(i){chisq.test(table(i, bdvarclin$motivoegre))$p.value})
-listachisvclin <- round(listachisvclin, 3)
-listachisvclin
-listachisvclin <- data.frame(apps = nompachisvclin, p = listachisvclin)
-
-# En este código, encontré la manera de presentar de mejor manera las chis
-str(bdvarclin)
-bdvarclinred_nonas <- bdvarclin %>%
-  #select(c(-starts_with(c('ekg', 'gdo')), -txhashosp, -piel,-neumonia, -ventnoinv)) %>%
-  select(c(all_of(nompachisvclin), motivoegre)) %>%
-  mutate(sintoma1 = ifelse(sintoma1 %in% c('Debilidad muscular', 'Incapacidad','Diarrea'), 'Otros', sintoma1)) %>%
-  pivot_longer(1:6, names_to = 'apps', values_to = 'valor' ) %>%
-  group_by(motivoegre, apps, valor) %>%
-  na.omit %>%
-  summarise(n = n()) %>%
-  mutate(frec = round(n/sum(n)*100, 2), total = sum(n))%>%
-  pivot_wider(names_from = motivoegre, values_from = c(n, frec, total)) %>%
-  mutate(total = `n_Defunción` + `n_Mejoría`,
-         pordef = round(`n_Defunción`/total*100, 1),
-         pormejo = round(`n_Mejoría`/total*100, 1),
-         muertos = paste0(str_pad(`n_Defunción`,4,side = 'right', pad = ' '), '(', pordef, '%)'),
-         vivos = paste0(str_pad(`n_Mejoría`,4,side = 'right'), '(', pormejo, '%)')) %>% #usé unite con las numéricas.
-  select(apps, valor, total, muertos, vivos) %>%
-  left_join(listachisvclin, by = 'apps') %>%
-  arrange(p)%>%
-  rename(Variable = apps,Valor = valor , Total = total, `Defunción` = muertos, `Mejoría` = vivos)
-
-#Añadiré las chis a la base anterior:
-#este código formatea la variable chi a caracter, los menores de 0.001, pero decido que es mejor dejarla
-# como númerica. el código para calcular la chi está antes de hacer la base, para usar left_join en el código
-# nompachisvclin <- bdvarclin %>%
-#   select(c(-starts_with(c('ekg', 'gdo')), -txhashosp, -piel, -ventnoinv, -neumonia, -motivoegre)) %>% names
-# nompachisvclin
-# listachisvclin <- apply(bdvarclin[, nompachisvclin],2, function(i){chisq.test(table(i, bdvarclin$motivoegre))$p.value})
-# listachisvclin <- round(listachisvclin, 3)
-# listachisvclin
-# listachisvclin[which(listachisvclin < 0.001)] <- '< 0.001'
-# listachisvclin
-# lvclin <- listachisvclin
-# lvclin
-# #Doy el orden y espacios:
-# listachisvclin2 <- c(lvclin['anticoag'], '', lvclin['controltahosp'], '',
-#                      lvclin['dislip'], '', lvclin['sintoma1'], rep('', 6),
-#                      lvclin['tipoing'], rep('', 2), lvclin['ventilador'], '')
-# listachisvclin2
-
-#agrego las chis a la base:
-#bdvarclinred_nonas$Chi <- listachisvclin
-
-#_________________________________________________________________________
-#Código para trabajar las variables cuantitativas de laboratorios y otros.
-
-# Datos globales
-str(bdcoving, list.len = 200)
+```{r varclin-numglob}
 nomvar <- bdcoving %>% select(where(is.numeric)) %>% names
-nomvar
 nomvar <- nomvar[-c(1:5, 39:40, 52)]
-nomvar
 dimbdcoving <- dim(bdcoving %>%filter(motivoegre %in% c(2,3) & rescov1 == 1) %>% select(nss))[1]
-  dimbdcoving
 validos <- function(x){
   dimbdcoving - sum(is.na(x))
 }
+
 bdvparaclinglob <- bdcoving %>%filter(motivoegre %in% c(2,3) & rescov1 == 1)%>%
   select(all_of(nomvar))%>%
   summarise(across(everything(), list(
@@ -1187,26 +867,53 @@ bdvparaclinglob <- bdcoving %>%filter(motivoegre %in% c(2,3) & rescov1 == 1)%>%
                names_sep = '_',
                names_to = c('Variable', '.value'))%>%
   unite('Promedio ± DE', c(Promedio, `Desviación estándar`), sep = ' ± ')
+kable(bdvparaclinglob, caption = 'Initial laboratory measures')
+```
+
+## Clinical characteristics by outcome
+
+```{r varclin-cat-motivoegre}
 
 
+nompachisvclin <- bdvarclin %>%
+  select(c(-starts_with(c('ekg', 'gdo')), -txhashosp, -piel, -ventnoinv, -neumonia, -motivoegre)) %>% names
+listachisvclin <- apply(bdvarclin[, nompachisvclin],2, function(i){chisq.test(table(i, bdvarclin$motivoegre))$p.value})
+listachisvclin <- round(listachisvclin, 3)
+listachisvclin <- data.frame(apps = nompachisvclin, p = listachisvclin)
 
-#Datos por motivoegre y sus tes.
-#Selecciono las variables con válidos mayor a 100
+bdvarclinred_nonas <- bdvarclin %>%
+  select(c(all_of(nompachisvclin), motivoegre)) %>%
+  mutate(sintoma1 = ifelse(sintoma1 %in% c('Debilidad muscular', 'Incapacidad','Diarrea'), 'Otros',   sintoma1)) %>%
+  pivot_longer(1:6, names_to = 'apps', values_to = 'valor' ) %>%
+  group_by(motivoegre, apps, valor) %>%
+  na.omit %>%
+  summarise(n = n()) %>%
+  mutate(frec = round(n/sum(n)*100, 2), total = sum(n))%>%
+  pivot_wider(names_from = motivoegre, values_from = c(n, frec, total)) %>%
+  mutate(total = `n_Defunción` + `n_Mejoría`,
+         pordef = round(`n_Defunción`/total*100, 1),
+         pormejo = round(`n_Mejoría`/total*100, 1),
+         muertos = paste0(str_pad(`n_Defunción`,4,side = 'right', pad = ' '), '(', pordef, '%)'),
+         vivos = paste0(str_pad(`n_Mejoría`,4,side = 'right'), '(', pormejo, '%)')) %>% 
+  select(apps, valor, total, muertos, vivos) %>%
+  left_join(listachisvclin, by = 'apps') %>%
+  arrange(p)%>%
+  rename(Variable = apps,Valor = valor , Total = total, `Defunción` = muertos, `Mejoría` = vivos)
 
+kable(bdvarclinred_nonas, caption = 'Categorical variables')
+
+```
+
+
+```{r varclin-num-motivoegre}
 nomvar2 <- bdvparaclinglob %>%
   filter(Validos > 100) %>%
   select(Variable) %>% pull
-nomvar2
-
 
 bdnum2 <- bdcoving%>%filter(motivoegre %in% c(2,3) & rescov1 == 1) %>% 
   mutate(motivoegre = factor(motivoegre, levels = c(2,3), labels = c('Mejoría', 'Defunción')))%>%
   select(c(motivoegre, all_of(nomvar2)))
-names(bdnum2)
-# 2) calculo la t para cada variable contra el motivo de egreso
 listates2 <- apply(bdnum2[,-1],2, function(i){t.test(i ~ bdnum2$motivoegre)$p.value})
-listates2
-# 3) hago una base de datos con los nombres de los antecedentes y el valor de p, para unirlo en la base de datos
 dftes2 <- data.frame(Variable = nomvar2, p = round(listates2, 3))
 
 validos2 <- function(x){
@@ -1227,16 +934,9 @@ bdvarnum2motiegre <- bdcoving %>%
                names_sep = '_',
                names_to = c('Variable', '.value')) %>%
   left_join(dftes2, by = 'Variable')%>%
-  #rename(expression(italic(p))= p)
   unite('Promedio ± DE', c(Promedio, `Desviación estándar`), sep = ' ± ') %>%
   select(Variable, Validos, motivoegre, `Promedio ± DE`, p  )%>%
   rename(`Motivo de egreso` = motivoegre)%>%
   arrange(p, Variable)
-
-#colesterol:
-pawilcox <- bdcoving %>%filter(motivoegre %in% c(2,3) & rescov1 == 1) %>%
-  select(colesterol, motivoegre) %>%
-  mutate(colesterol = as.numeric(colesterol),
-         motivoegre = as.numeric(as.character(motivoegre)))
-wilcox.test(pawilcox$colesterol, pawilcox$motivoegre)
-table(colesterol = pawilcox$colesterol, motivoegre = pawilcox$motivoegre)
+kable(bdvarnum2motiegre, caption = 'Numeric variables')
+```
